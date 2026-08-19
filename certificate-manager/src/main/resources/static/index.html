@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Certificate Manager</title>
+    <script>
+        (function () {
+            var t = localStorage.getItem('cm-theme');
+            if (!t) t = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+            document.documentElement.setAttribute('data-theme', t);
+        })();
+    </script>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="loginOverlay" class="login-overlay">
+    <div class="login-card">
+        <h2>Certificate Manager</h2>
+        <p>Enter your credentials to access the management console</p>
+        <div class="form-group">
+            <label for="loginUser">Username</label>
+            <input id="loginUser" type="text" autocomplete="username" value="admin">
+        </div>
+        <div class="form-group">
+            <label for="loginPass">Password</label>
+            <input id="loginPass" type="password" autocomplete="current-password" value="admin123">
+        </div>
+        <button class="btn btn-primary" id="loginBtn">Sign in</button>
+        <p class="hint">demo accounts: admin/admin123 &middot; requester/requester123</p>
+    </div>
+</div>
+
+<div id="app" class="app hidden">
+    <aside class="sidebar">
+        <div class="brand">
+            <span class="brand-icon">&#128274;</span>
+            <span>Certificate Manager</span>
+        </div>
+        <nav class="nav">
+            <a href="#dashboard" data-tab="dashboard" class="nav-link active">Dashboard</a>
+            <a href="#cas" data-tab="cas" class="nav-link cas-link hidden">CA Management</a>
+            <a href="#profiles" data-tab="profiles" class="nav-link profiles-link hidden">Profiles</a>
+            <a href="#certificates" data-tab="certificates" class="nav-link">Certificates</a>
+            <a href="#request" data-tab="request" class="nav-link request-link">Request Certificate</a>
+            <a href="#crl" data-tab="crl" class="nav-link crl-link">CRL</a>
+            <a href="#ocsp" data-tab="ocsp" class="nav-link ocsp-link">OCSP</a>
+            <a href="#settings" data-tab="settings" class="nav-link settings-link hidden">Settings</a>
+            <a href="#users" data-tab="users" class="nav-link users-link hidden">Users</a>
+            <a href="#audit" data-tab="audit" class="nav-link audit-link hidden">Audit Log</a>
+            <a href="#api" data-tab="api" class="nav-link">API Console</a>
+        </nav>
+        <div class="sidebar-footer">
+            <div class="user-info">
+                <span id="currentUser">-</span>
+            </div>
+            <button class="btn btn-outline btn-block" id="themeToggle">&#9789; Light mode</button>
+            <button class="btn btn-outline btn-block" id="logoutBtn">Sign out</button>
+        </div>
+    </aside>
+
+    <main class="main">
+        <div id="toast" class="toast hidden"></div>
+
+        <!-- Dashboard -->
+        <section id="tab-dashboard" class="tab active">
+            <h1>Dashboard</h1>
+            <div class="cards" id="dashboardCards"></div>
+            <div class="panel">
+                <h3>Platform configuration</h3>
+                <div class="config-list" id="configList"></div>
+            </div>
+        </section>
+
+        <!-- CA Management -->
+        <section id="tab-cas" class="tab">
+            <div class="tab-header">
+                <h1>CA Management</h1>
+                <button class="btn btn-primary" id="newCaBtn">+ Request new CA</button>
+            </div>
+            <div class="panel">
+                <table class="table">
+                    <thead>
+                    <tr>
+                        <th>ID</th><th>Name</th><th>Type</th><th>Status</th>
+                        <th>Key storage</th><th>Subject DN</th><th>Expires</th><th>Actions</th>
+                    </tr>
+                    </thead>
+                    <tbody id="caTableBody"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Certificates -->
+        <section id="tab-certificates" class="tab">
+            <div class="tab-header">
+                <h1>Certificates &amp; Requests</h1>
+                <button class="btn btn-primary" id="newCsrBtn">+ Submit CSR</button>
+            </div>
+            <div class="panel">
+                <div class="search-bar">
+                    <input id="certSearch" type="text" placeholder="Search by common name, subject DN, serial or requester...">
+                    <select id="certSearchStatus">
+                        <option value="">All statuses</option>
+                        <option value="PENDING">Pending</option>
+                        <option value="ISSUED">Issued</option>
+                        <option value="SUSPENDED">Suspended</option>
+                        <option value="REVOKED">Revoked</option>
+                    </select>
+                    <select id="certSearchCa">
+                        <option value="">All CAs</option>
+                    </select>
+                    <button class="btn btn-primary" id="certSearchBtn">Search</button>
+                    <button class="btn btn-outline" id="certSearchReset">Reset</button>
+                </div>
+                <table class="table">
+                    <thead>
+                    <tr>
+                        <th>ID</th><th>Common Name</th><th>Status</th><th>Profile</th>
+                        <th>Storage</th><th>Serial</th><th>Issuer</th><th>Expires</th><th>Actions</th>
+                    </tr>
+                    </thead>
+                    <tbody id="certTableBody"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Certificate Profiles -->
+        <section id="tab-profiles" class="tab">
+            <div class="tab-header">
+                <h1>Certificate Profiles</h1>
+                <button class="btn btn-primary" id="newProfileBtn">+ New Profile</button>
+            </div>
+            <div class="panel">
+                <p class="hint">Profiles bundle key algorithm, size, validity, key usage, extended key usage and key storage so requesters can pick one instead of entering every field. Built-in types (code signing, client, email, document signing, Class 1/2/3, Aadhaar eSign, ...) auto-fill the defaults; every field stays editable. CA profiles can only be used by administrators. Profiles with <strong>PKCS#11 key storage</strong> generate the key pair on the HSM at issuance and keep key + certificate on the device (no exportable key).</p>
+                <table class="table">
+                    <thead>
+                    <tr>
+                        <th>ID</th><th>Name</th><th>Description</th><th>Type</th><th>Algorithm / Size</th>
+                        <th>Validity</th><th>Key storage</th><th>Key usage</th><th>Extended usage</th><th>Actions</th>
+                    </tr>
+                    </thead>
+                    <tbody id="profileTableBody"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Request Certificate -->
+        <section id="tab-request" class="tab">
+            <h1>Request Certificate</h1>
+            <p class="hint">Enter the certificate details below. The platform generates the key pair, signs the certificate immediately and stores it so you can download it from the Certificates tab.</p>
+            <div class="panel">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="reqProfile">Certificate profile (optional)</label>
+                        <select id="reqProfile">
+                            <option value="">None (fill fields manually)</option>
+                        </select>
+                        <p class="hint hidden" id="reqStorageHint"></p>
+                    </div>
+                    <div class="form-group">
+                        <label for="reqIssuer">Issuing CA *</label>
+                        <select id="reqIssuer"></select>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="reqCn">Common name (CN) *</label>
+                        <input id="reqCn" type="text" placeholder="app.example.com">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="reqO">Organization (O)</label>
+                        <input id="reqO" type="text" placeholder="Example Corp">
+                    </div>
+                    <div class="form-group">
+                        <label for="reqOu">Organizational unit (OU)</label>
+                        <input id="reqOu" type="text" placeholder="Platform Engineering">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="reqC">Country (C, 2 letters)</label>
+                        <input id="reqC" type="text" maxlength="2" placeholder="US">
+                    </div>
+                    <div class="form-group">
+                        <label for="reqSt">State / Province (ST)</label>
+                        <input id="reqSt" type="text" placeholder="California">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="reqL">Locality (L)</label>
+                        <input id="reqL" type="text" placeholder="San Francisco">
+                    </div>
+                    <div class="form-group">
+                        <label for="reqEmail">Email</label>
+                        <input id="reqEmail" type="email" placeholder="ops@example.com">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="reqDns">DNS names (SAN, comma-separated)</label>
+                        <input id="reqDns" type="text" placeholder="app.example.com, api.example.com">
+                    </div>
+                    <div class="form-group">
+                        <label for="reqIps">IP addresses (SAN, comma-separated)</label>
+                        <input id="reqIps" type="text" placeholder="10.0.0.5, 192.168.1.20">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="reqKeyAlg">Key algorithm</label>
+                        <select id="reqKeyAlg">
+                            <option value="RSA">RSA</option>
+                            <option value="EC">ECDSA</option>
+                            <option value="ED25519">Ed25519</option>
+                            <option value="ED448">Ed448</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="reqKeySize">Key size</label>
+                        <select id="reqKeySize">
+                            <option value="2048">RSA 2048</option>
+                            <option value="3072">RSA 3072</option>
+                            <option value="4096">RSA 4096</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="reqValidity">Validity</label>
+                        <div style="display:flex;gap:8px">
+                            <input id="reqValidity" type="number" value="365" min="1" max="3650" style="flex:1">
+                            <select id="reqValidityUnit" style="flex:0 0 110px">
+                                <option value="days">days</option>
+                                <option value="minutes">minutes</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Additional extensions (optional OID rows; pick from the dropdown or type any OID; standard extensions like Key Usage, SAN, Basic Constraints, EKU are managed by the form and excluded)</label>
+                        <div id="reqExtRows"></div>
+                        <button type="button" class="btn btn-sm" id="reqAddExtBtn">+ Add extension</button>
+                    </div>
+                </div>
+                <button class="btn btn-primary" id="reqSubmitBtn">Submit request</button>
+            </div>
+        </section>
+
+        <!-- CRL -->
+        <section id="tab-crl" class="tab">
+            <h1>Certificate Revocation List</h1>
+            <div class="panel">
+                <h3>Generate / fetch CRL</h3>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="crlCaSelect">CA</label>
+                        <select id="crlCaSelect"></select>
+                    </div>
+                    <button class="btn btn-primary" id="genCrlBtn">Generate CRL</button>
+                    <button class="btn btn-outline" id="viewCrlPemBtn">View PEM</button>
+                    <button class="btn btn-outline" id="downloadCrlBtn">Download DER</button>
+                </div>
+                <pre id="crlOutput" class="code-block hidden"></pre>
+            </div>
+            <div class="panel">
+                <h3>CRL history</h3>
+                <table class="table">
+                    <thead>
+                    <tr><th>CRL #</th><th>CA</th><th>This update</th><th>Next update</th><th>Revoked entries</th><th>Current</th></tr>
+                    </thead>
+                    <tbody id="crlHistoryBody"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- OCSP -->
+        <section id="tab-ocsp" class="tab">
+            <h1>OCSP Status</h1>
+            <div class="panel">
+                <h3>Check certificate status</h3>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="ocspSerial">Serial number (hex)</label>
+                        <input id="ocspSerial" type="text" placeholder="e.g. 1a2b3c...">
+                    </div>
+                    <button class="btn btn-primary" id="ocspCheckBtn">Check status</button>
+                </div>
+                <div id="ocspResult" class="ocsp-result hidden"></div>
+            </div>
+        </section>
+
+        <!-- Settings -->
+        <section id="tab-settings" class="tab">
+            <h1>Settings</h1>
+            <div class="panel">
+                <h3>PKCS#11 device (HSM / smart card)</h3>
+                <p class="hint">Connect a PKCS#11 device so CA private keys can be generated and kept on hardware, never leaving the token. When PKCS#11 is enabled, newly requested CAs can be issued with their key on the device; all signing (CA certs, leaf certs, CRLs, OCSP) then happens natively on the token.</p>
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="pkcs11Enabled"> Enable PKCS#11 device
+                    </label>
+                </div>
+                <div class="form-group">
+                    <label for="pkcs11Preset">Known PKCS#11 providers (preset)</label>
+                    <select id="pkcs11Preset">
+                        <option value="">-- select a known provider to pre-fill --</option>
+                    </select>
+                    <p class="hint">Select a known HSM / token vendor to pre-fill its typical library path and provider name, then adjust the fields below as needed. You can always type a custom provider name or library path.</p>
+                </div>
+                <div class="form-group hidden" id="pkcs11PresetLibsGroup">
+                    <label for="pkcs11PresetLibs">Alternative library paths for this provider</label>
+                    <select id="pkcs11PresetLibs"></select>
+                </div>
+                <div class="form-group">
+                    <label for="pkcs11ProviderName">Provider name</label>
+                    <input id="pkcs11ProviderName" type="text" placeholder="SunPKCS11-CM">
+                </div>
+                <div class="form-group">
+                    <label for="pkcs11Library">Library path</label>
+                    <input id="pkcs11Library" type="text" placeholder="C:\Program Files\SoftHSM2\lib\softhsm2.dll">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="pkcs11Slot">Slot index</label>
+                        <input id="pkcs11Slot" type="number" min="0" value="0">
+                    </div>
+                    <div class="form-group">
+                        <label for="pkcs11Pin">Token PIN</label>
+                        <input id="pkcs11Pin" type="password" placeholder="••••••••">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="pkcs11DefaultStorage">Default key storage for new CAs</label>
+                    <select id="pkcs11DefaultStorage">
+                        <option value="DATABASE">Database (keys stored in the platform DB)</option>
+                        <option value="PKCS11">PKCS#11 device (keys kept on hardware)</option>
+                    </select>
+                    <p class="hint">Used when a CA request does not explicitly choose a key storage. Individual CAs can override this in the CA request modal.</p>
+                </div>
+                <div class="form-row">
+                    <button class="btn btn-primary" id="savePkcs11Btn">Save PKCS#11 settings</button>
+                    <button class="btn btn-outline" id="testPkcs11Btn">Test connection</button>
+                    <button class="btn btn-outline" id="disconnectPkcs11Btn">Disconnect provider</button>
+                </div>
+                <pre id="pkcs11Result" class="code-block hidden"></pre>
+            </div>
+        </section>
+
+        <!-- User Management -->
+        <section id="tab-users" class="tab">
+            <div class="tab-header">
+                <h1>User Management</h1>
+                <button class="btn btn-primary" id="newUserBtn">+ New user</button>
+            </div>
+            <p class="hint">Manage platform accounts. Every user can request certificates; the administrator role unlocks CA, profile, CRL, settings, audit and user management. Guards prevent disabling or deleting your own account and removing the last administrator.</p>
+            <div class="panel">
+                <table class="table">
+                    <thead>
+                    <tr>
+                        <th>ID</th><th>Username</th><th>Roles</th><th>Status</th>
+                        <th>Created</th><th>Actions</th>
+                    </tr>
+                    </thead>
+                    <tbody id="userTableBody"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Signed Audit Log -->
+        <section id="tab-audit" class="tab">
+            <div class="tab-header">
+                <h1>Signed Audit Log</h1>
+                <button class="btn btn-outline" id="verifyAuditBtn">Verify log integrity</button>
+            </div>
+            <p class="hint">Every significant action is recorded in a tamper-evident chain: each entry hashes the previous one (SHA-256) and is signed with the platform audit secret (HMAC-SHA256), so any modification or reordering is detectable. Verify recomputes the whole chain from the database.</p>
+            <div class="panel">
+                <div id="auditVerifyResult" class="hidden"></div>
+                <table class="table">
+                    <thead>
+                    <tr>
+                        <th>ID</th><th>Timestamp</th><th>Actor</th><th>Category</th>
+                        <th>Action</th><th>Detail</th><th>Hash</th><th>Signature</th>
+                    </tr>
+                    </thead>
+                    <tbody id="auditLogBody"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- API Console -->
+        <section id="tab-api" class="tab">
+            <h1>API Console</h1>
+            <p class="hint">Browse and invoke every REST endpoint exposed by the platform. Requests use your current login (HTTP Basic auth). Path/query parameters and JSON bodies can be edited before sending.</p>
+            <div class="api-console">
+                <div class="api-list panel">
+                    <div id="apiListBody"></div>
+                </div>
+                <div class="api-detail panel">
+                    <div id="apiDetailEmpty" class="api-empty">
+                        <p>Select an endpoint from the list to inspect and invoke it.</p>
+                    </div>
+                    <div id="apiDetail" class="hidden">
+                        <div class="api-title">
+                            <span class="method-badge method-get" id="apiMethod"></span>
+                            <code id="apiPath"></code>
+                        </div>
+                        <p class="hint" id="apiDesc"></p>
+                        <div id="apiParams"></div>
+                        <div class="form-group hidden" id="apiBodyGroup">
+                            <label for="apiBody">Request body (JSON)</label>
+                            <textarea id="apiBody" rows="8" spellcheck="false"></textarea>
+                        </div>
+                        <div class="form-group hidden" id="apiFileGroup">
+                            <label for="apiFile">Binary request body</label>
+                            <input id="apiFile" type="file">
+                        </div>
+                        <div class="api-actions">
+                            <button class="btn btn-primary" id="apiSendBtn">Send request</button>
+                            <button class="btn btn-outline hidden" id="apiDownloadBtn">Download response</button>
+                        </div>
+                        <div class="api-meta" id="apiMeta"></div>
+                        <pre id="apiResponse" class="code-block hidden"></pre>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+</div>
+
+<!-- Modal: New CA -->
+<div id="caModal" class="modal hidden">
+    <div class="modal-content">
+        <span class="modal-close" data-close="caModal">&times;</span>
+        <h2>Request new CA</h2>
+        <div class="form-group">
+            <label for="caName">Name</label>
+            <input id="caName" type="text" placeholder="Company Root CA">
+        </div>
+        <div class="form-group">
+            <label for="caSubjectDn">Subject DN</label>
+            <input id="caSubjectDn" type="text" value="CN=Example CA, O=Example Corp, C=US">
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="caType">Type</label>
+                <select id="caType">
+                    <option value="ROOT">Root</option>
+                    <option value="INTERMEDIATE">Intermediate</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="caParent">Parent CA</label>
+                <select id="caParent"></select>
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="caKeyAlg">Key algorithm</label>
+                <select id="caKeyAlg">
+                    <option value="RSA">RSA</option>
+                    <option value="EC">ECDSA</option>
+                    <option value="ED25519">Ed25519</option>
+                    <option value="ED448">Ed448</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="caKeySize">Key size</label>
+                <select id="caKeySize">
+                    <option value="2048">RSA 2048</option>
+                    <option value="3072">RSA 3072</option>
+                    <option value="4096">RSA 4096</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="caKeyStorage">Key storage</label>
+                <select id="caKeyStorage">
+                    <option value="DATABASE">Database</option>
+                    <option value="PKCS11">PKCS#11 device</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="caValidity">Validity (days)</label>
+                <input id="caValidity" type="number" value="3650">
+            </div>
+        </div>
+        <div class="form-group hidden" id="caPkcs11AliasGroup">
+            <label for="caPkcs11Alias">PKCS#11 token alias</label>
+            <input id="caPkcs11Alias" type="text" placeholder="Defaults to the CA name">
+            <p class="hint">Alias under which the CA key + certificate are stored on the device. Leave blank to use the CA name.</p>
+        </div>
+        <button class="btn btn-primary btn-block" id="submitCaBtn">Create CA</button>
+    </div>
+</div>
+
+<!-- Modal: Submit CSR -->
+<div id="csrModal" class="modal hidden">
+    <div class="modal-content modal-wide">
+        <span class="modal-close" data-close="csrModal">&times;</span>
+        <h2>Submit CSR for signing</h2>
+        <p class="hint">Paste a PKCS#10 CSR in PEM format. Tip: <code>openssl req -new -newkey rsa:2048 -nodes -keyout key.pem -out csr.pem -subj "/CN=myapp.example.com"</code></p>
+        <div class="form-group">
+            <label for="csrIssuer">Issuing CA</label>
+            <select id="csrIssuer"></select>
+        </div>
+        <div class="form-group">
+            <label for="csrPem">CSR (PEM)</label>
+            <textarea id="csrPem" rows="8" spellcheck="false"></textarea>
+        </div>
+        <button class="btn btn-primary btn-block" id="submitCsrBtn">Submit for signing</button>
+    </div>
+</div>
+
+<!-- Modal: Certificate profile -->
+<div id="profileModal" class="modal hidden">
+    <div class="modal-content modal-wide">
+        <span class="modal-close" data-close="profileModal">&times;</span>
+        <h2 id="profileModalTitle">New Certificate Profile</h2>
+        <div class="form-group">
+            <label for="pType">Profile type</label>
+            <select id="pType"></select>
+            <p class="hint" id="pTypeHint">Select a built-in type to auto-fill key usage, extended key usage and validity. You can still adjust individual fields.</p>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="pName">Name *</label>
+                <input id="pName" type="text" placeholder="SSL Certificate">
+            </div>
+            <div class="form-group">
+                <label for="pDescription">Description</label>
+                <input id="pDescription" type="text" placeholder="TLS server certificate">
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="pKeyAlg">Key algorithm</label>
+                <select id="pKeyAlg">
+                    <option value="RSA">RSA</option>
+                    <option value="EC">ECDSA</option>
+                    <option value="ED25519">Ed25519</option>
+                    <option value="ED448">Ed448</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="pKeySize">Key size</label>
+                <select id="pKeySize">
+                    <option value="2048">RSA 2048</option>
+                    <option value="3072">RSA 3072</option>
+                    <option value="4096">RSA 4096</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="pValidity">Validity</label>
+                <div style="display:flex;gap:8px">
+                    <input id="pValidity" type="number" value="365" min="1" max="3650" style="flex:1">
+                    <select id="pValidityUnit" style="flex:0 0 110px">
+                        <option value="days">days</option>
+                        <option value="minutes">minutes</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="pKeyStorage">Key storage</label>
+                <select id="pKeyStorage">
+                    <option value="DATABASE">Database (exportable PEM)</option>
+                    <option value="PKCS11">PKCS#11 device (HSM)</option>
+                </select>
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="pCaProfile"> CA profile (basicConstraints CA:TRUE, administrators only)
+                </label>
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label>Key usage</label>
+                <div id="pKeyUsage" class="checkbox-grid">
+                    <label class="checkbox-label"><input type="checkbox" value="digitalSignature"> digitalSignature</label>
+                    <label class="checkbox-label"><input type="checkbox" value="nonRepudiation"> nonRepudiation</label>
+                    <label class="checkbox-label"><input type="checkbox" value="keyEncipherment"> keyEncipherment</label>
+                    <label class="checkbox-label"><input type="checkbox" value="dataEncipherment"> dataEncipherment</label>
+                    <label class="checkbox-label"><input type="checkbox" value="keyAgreement"> keyAgreement</label>
+                    <label class="checkbox-label"><input type="checkbox" value="keyCertSign"> keyCertSign</label>
+                    <label class="checkbox-label"><input type="checkbox" value="cRLSign"> cRLSign</label>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Extended key usage</label>
+                <div id="pEku" class="checkbox-grid">
+                    <label class="checkbox-label"><input type="checkbox" value="serverAuth"> serverAuth</label>
+                    <label class="checkbox-label"><input type="checkbox" value="clientAuth"> clientAuth</label>
+                    <label class="checkbox-label"><input type="checkbox" value="codeSigning"> codeSigning</label>
+                    <label class="checkbox-label"><input type="checkbox" value="emailProtection"> emailProtection</label>
+                    <label class="checkbox-label"><input type="checkbox" value="timeStamping"> timeStamping</label>
+                    <label class="checkbox-label"><input type="checkbox" value="ocspSigning"> ocspSigning</label>
+                </div>
+            </div>
+        </div>
+        <div class="form-group">
+            <label>Additional extensions (OID rows)</label>
+            <div id="pExtRows"></div>
+            <button type="button" class="btn btn-sm" id="pAddExtBtn">+ Add extension</button>
+        </div>
+        <button class="btn btn-primary btn-block" id="saveProfileBtn">Save profile</button>
+    </div>
+</div>
+
+<!-- Modal: PEM viewer -->
+<div id="pemModal" class="modal hidden">
+    <div class="modal-content modal-wide">
+        <span class="modal-close" data-close="pemModal">&times;</span>
+        <h2 id="pemModalTitle">PEM</h2>
+        <pre id="pemContent" class="code-block"></pre>
+        <button class="btn btn-outline" id="copyPemBtn">Copy to clipboard</button>
+    </div>
+</div>
+
+<!-- Modal: certificate / request details -->
+<div id="certDetailsModal" class="modal hidden">
+    <div class="modal-content">
+        <span class="modal-close" data-close="certDetailsModal">&times;</span>
+        <h2 id="certDetailsTitle">Certificate details</h2>
+        <div id="certDetailsBody" class="detail-list"></div>
+    </div>
+</div>
+
+<!-- Modal: new user -->
+<div id="userModal" class="modal hidden">
+    <div class="modal-content">
+        <span class="modal-close" data-close="userModal">&times;</span>
+        <h2>New user</h2>
+        <div class="form-group">
+            <label for="uUsername">Username</label>
+            <input id="uUsername" type="text" maxlength="50" placeholder="e.g. alice">
+        </div>
+        <div class="form-group">
+            <label for="uPassword">Password</label>
+            <input id="uPassword" type="password" minlength="6" placeholder="At least 6 characters">
+        </div>
+        <div class="form-group">
+            <label class="checkbox">
+                <input type="checkbox" id="uAdmin"> Administrator (full access, can manage users)
+            </label>
+        </div>
+        <button class="btn btn-primary" id="saveUserBtn">Create user</button>
+    </div>
+</div>
+
+<script src="js/app.js"></script>
+</body>
+</html>

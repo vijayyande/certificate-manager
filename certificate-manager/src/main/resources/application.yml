@@ -1,0 +1,47 @@
+spring:
+  application:
+    name: certificate-manager
+  datasource:
+    url: jdbc:h2:file:./data/cmdb;AUTO_SERVER=TRUE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  jpa:
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate:
+        format_sql: true
+    open-in-view: false
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+server:
+  port: 8443
+  servlet:
+    context-path: /
+
+# CA / certificate manager configuration
+cm:
+  # CA and certificate defaults
+  ca:
+    key-size: 4096
+    signature-algorithm: SHA256withRSA
+    default-validity-days: 3650
+  cert:
+    key-size: 2048
+    signature-algorithm: SHA256withRSA
+    default-validity-days: 365
+  crl:
+    validity-days: 30
+    # CRL distribution point base URL placed into issued certificates
+    url-base: http://localhost:8443/api/crl/
+  # OCSP responder URL placed into issued certificates (AIA extension)
+  ocsp-url: http://localhost:8443/api/ocsp
+
+logging:
+  level:
+    org.springframework.security: INFO
+    com.example.cm: INFO

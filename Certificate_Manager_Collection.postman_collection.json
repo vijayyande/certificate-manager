@@ -1,0 +1,949 @@
+{
+  "info": {
+    "name": "Certificate Manager - Full API",
+    "_postman_id": "cert-manager-full-api",
+    "description": "Complete API collection for the Certificate Manager platform and its DMZ Responder module.\n\n**Setup:**\n1. Start CM: `java -jar certificate-manager/target/certificate-manager-0.0.1-SNAPSHOT.jar --server.port=8089`\n2. Start DMZ: `java -jar dmz-responder/target/cm-dmz-responder-0.0.1-SNAPSHOT.jar --server.port=8080 --cm.base-url=http://localhost:8089 --cm.username=responder --cm.password=r3sp0nd3r!pw`\n3. Import this collection. Collection variables set `baseUrl=http://localhost:8443` and `dmzUrl=http://localhost:8080` — change if you used different ports.\n\nDemo accounts seeded on first start:\n- **admin** / **admin123** (ADMIN)\n- **requester** / **requester123** (REQUESTER)\n\nThe collection is organised into folders that mirror the backend modules. Most requests include a **Tests** tab that validates the response status code; just look at the Test Results after sending.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "basic",
+    "basic": [
+      { "key": "username", "value": "{{adminUser}}", "type": "string" },
+      { "key": "password", "value": "{{adminPass}}", "type": "string" }
+    ]
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8443" },
+    { "key": "dmzUrl", "value": "http://localhost:8080" },
+    { "key": "adminUser", "value": "admin" },
+    { "key": "adminPass", "value": "admin123" },
+    { "key": "requesterUser", "value": "requester" },
+    { "key": "requesterPass", "value": "requester123" },
+    { "key": "responderUser", "value": "responder" },
+    { "key": "responderPass", "value": "r3sp0nd3r!pw" }
+  ],
+  "item": [
+    {
+      "name": "System",
+      "description": "General information and current user context.",
+      "item": [
+        {
+          "name": "Get Current User (/api/me)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/me", "host": ["{{baseUrl}}"], "path": ["api", "me"] },
+            "description": "Returns the username and roles of the authenticated user."
+          },
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('200 OK', () => pm.response.code === 200);", "pm.test('username present', () => { const d = pm.response.json(); pm.expect(d).to.have.property('username'); pm.expect(d).to.have.property('roles'); });"] } }
+          ]
+        },
+        {
+          "name": "Get System Info (/api/info)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/info", "host": ["{{baseUrl}}"], "path": ["api", "info"] },
+            "description": "Returns CA/certificate counts and CRL/OCSP URL configuration."
+          },
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('200 OK', () => pm.response.code === 200);", "pm.test('has counts', () => pm.response.json().counts);"] } }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Certificate Authorities",
+      "description": "Create, inspect, revoke/suspend/resume CAs, and download CA certificates.",
+      "item": [
+        {
+          "name": "List Active CAs (GET /api/ca/active)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/ca/active", "host": ["{{baseUrl}}"], "path": ["api", "ca", "active"] },
+            "description": "Any authenticated user can list active CAs. This powers the CSR issuer and CRL dropdowns."
+          },
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('200 OK', () => pm.response.code === 200);", "pm.test('is array', () => Array.isArray(pm.response.json()));"] } }
+          ]
+        },
+        {
+          "name": "List All CAs (GET /api/ca)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/ca", "host": ["{{baseUrl}}"], "path": ["api", "ca"] },
+            "description": "ADMIN only. Returns all CAs including revoked/suspended."
+          },
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('200 OK', () => pm.response.code === 200);"] } }
+          ]
+        },
+        {
+          "name": "Get CA by ID (GET /api/ca/1)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/ca/1", "host": ["{{baseUrl}}"], "path": ["api", "ca", "1"] },
+            "description": "ADMIN only. Returns full CA details including serial number, status, and certificate PEM."
+          },
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('200 OK', () => pm.response.code === 200);", "pm.test('has name', () => pm.response.json().name);"] } }
+          ]
+        },
+        {
+          "name": "Create Root CA (POST /api/ca)",
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('200 OK', () => pm.response.code === 200);", "pm.test('CA created', () => { const d = pm.response.json(); pm.expect(d.success).to.be.true; pm.expect(d.data).to.have.property('id'); });"] } }
+          ],
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{baseUrl}}/api/ca", "host": ["{{baseUrl}}"], "path": ["api", "ca"] },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Test Root CA\",\n  \"subjectDn\": \"CN=Test Root CA, O=Test Org\",\n  \"caType\": \"ROOT\",\n  \"keyAlgorithm\": \"RSA\",\n  \"keySize\": 2048,\n  \"requestedBy\": \"admin\"\n}"
+            },
+            "description": "ADMIN only. Creates a new root CA. Returns the full CA entity."
+          }
+        },
+        {
+          "name": "Create Intermediate CA (POST /api/ca)",
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('200 OK', () => pm.response.code === 200);"] } }
+          ],
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{baseUrl}}/api/ca", "host": ["{{baseUrl}}"], "path": ["api", "ca"] },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Test Intermediate CA\",\n  \"subjectDn\": \"CN=Test Intermediate CA, O=Test Org\",\n  \"caType\": \"INTERMEDIATE\",\n  \"parentCaId\": 1,\n  \"keyAlgorithm\": \"RSA\",\n  \"keySize\": 2048,\n  \"requestedBy\": \"admin\"\n}"
+            },
+            "description": "ADMIN only. Creates an intermediate CA under parentCaId=1."
+          }
+        },
+        {
+          "name": "Revoke CA (POST /api/ca/3/revoke)",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{baseUrl}}/api/ca/3/revoke", "host": ["{{baseUrl}}"], "path": ["api", "ca", "3", "revoke"] },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"reason\": \"CA compromised\",\n  \"by\": \"admin\"\n}" },
+            "description": "ADMIN only. Revokes a CA. Adjust the CA id in the path."
+          },
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('200 OK or 400 (already revoked)', () => pm.response.code === 200 || pm.response.code === 400);"] } }
+          ]
+        },
+        {
+          "name": "Suspend CA (POST /api/ca/{id}/suspend)",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{baseUrl}}/api/ca/1/suspend", "host": ["{{baseUrl}}"], "path": ["api", "ca", "1", "suspend"] },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"by\": \"admin\"\n}" },
+            "description": "ADMIN only. Suspends a CA."
+          },
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('200 OK', () => pm.response.code === 200);"] } }
+          ]
+        },
+        {
+          "name": "Resume CA (POST /api/ca/{id}/resume)",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{baseUrl}}/api/ca/1/resume", "host": ["{{baseUrl}}"], "path": ["api", "ca", "1", "resume"] },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"by\": \"admin\"\n}" },
+            "description": "ADMIN only. Resumes a suspended CA."
+          },
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('200 OK', () => pm.response.code === 200);"] } }
+          ]
+        },
+        {
+          "name": "Download CA Certificate PEM (GET /api/ca/1/certificate.pem)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/ca/1/certificate.pem", "host": ["{{baseUrl}}"], "path": ["api", "ca", "1", "certificate.pem"] },
+            "description": "ADMIN only. Downloads the CA certificate in PEM format (text/plain)."
+          },
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('200 OK', () => pm.response.code === 200);", "pm.test('PEM format', () => pm.response.text().includes('-----BEGIN CERTIFICATE-----'));"] } }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Certificates",
+      "description": "Issue certificates (CSR or manual), list, inspect, download PEM/key, and revoke/suspend/resume.",
+      "item": [
+        {
+          "name": "Issue via CSR (POST /api/certificates/csr)",
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('200 OK', () => pm.response.code === 200);", "pm.test('cert issued', () => { const d = pm.response.json(); pm.expect(d.success).to.be.true; pm.expect(d.data).to.have.property('serialNumber'); });"] } }
+          ],
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{baseUrl}}/api/certificates/csr", "host": ["{{baseUrl}}"], "path": ["api", "certificates", "csr"] },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"csrPem\": \"-----BEGIN CERTIFICATE REQUEST-----\\nMIICvDCCAaQCAQAwdDELMAkGA1UEBhMCVVMxFjAUBgNVBAgMDUNhbGlmb3JuaWExFjAUBgNVBAcMDVNhbiBGcmFuY2lzY28xGTAXBgNVBAoMEEV4YW1wbGUgQ29ycC4xEzARBgNVBAsMClRlc3QgVW5pdDEWMBQGA1UEAwwNdGVzdC5leGFtcGxlLmNvbCCAASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAO3fYHkLs2hKlK0YF+aDSEJHVvKqKjJoIqFqMYC3GxKI3E0W+j9pRxO1qD/sFmE5RV7eCMRaZCRFh0y7Vt9Bn0E7oC+UMJCa4oOv+LqR8kS4JkHm5bPOk5vS5dJDcvkEYpOdTNClpzN2B7h/5w+3FgRgFM9Z0gq7lVqS2d7w2r3Q+T8O8A6G9dJkU5S4Y7b6B8C3D1E4F5G6H7I8J9K0L1M2N3O4P5Q6R7S8T9U0V1W2X3Y4Z5A6B7C8D9E0F1G2H3I4J5K6L7M8N9O0P1Q2R3S4T5U6V7W8X9Y0Z1A2B3C4D5E6F7G8H9I0J1K2L3M4N5O6P7Q8R9S0T1U2V3W4X5Y6Z7A8B9C0D1E2F3G4H5I6J7K8L9M0N1O2P3Q4R5S6T7U8V9W0X1Y2Z3A4B5C6D7E8F9G0H1I2J3K4L5M6N7O8P9Q0R1S2T3U4V5W6X7Y8Z9A0B1C2D3E4F5G6H7I8J9K0L1M2N3O4P5Q6R7S8T9U0V1W2X3Y4Z5A6B7C8D9E0F1G2H3I4J5K6L7M8N9O0P1Q2R3S4T5U6V7W8X9Y0Z1A2B3C4D5E6F7G8H9I0J1K2L3M4N5O6P7Q8R9S0T1U2V3W4X5Y6Z7A8B9C0D1E2F3G4H5I6J7K8L9M0N1O2P3Q4R5S6T7U8V9W0X1Y2Z3A4B5C6D7E8F9G0H1I2J3K4L5M6N7O8P9Q0R1S2T3U4V5W6X7Y8Z9A==\\n-----END CERTIFICATE REQUEST-----\",\n  \"requestedBy\": \"requester\"\n}"
+            },
+            "description": "REQUESTER or ADMIN. Submit a PKCS#10 CSR in PEM format. The backend selects the issuing CA automatically if issuerCaId is omitted."
+          }
+        },
+        {
+          "name": "Issue Manual Certificate (POST /api/certificates/request)",
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('200 OK', () => pm.response.code === 200);", "pm.test('cert issued', () => { const d = pm.response.json(); pm.expect(d.success).to.be.true; });"] } }
+          ],
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{baseUrl}}/api/certificates/request", "host": ["{{baseUrl}}"], "path": ["api", "certificates", "request"] },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"commonName\": \"test-leaf.local\",\n  \"organization\": \"Test Org\",\n  \"keyAlgorithm\": \"RSA\",\n  \"keySize\": 2048,\n  \"validityDays\": 365,\n  \"dnsNames\": [\"test-leaf.local\", \"*.test-leaf.local\"],\n  \"requestedBy\": \"requester\"\n}"
+            },
+            "description": "REQUESTER or ADMIN. The backend generates the key pair and issues the certificate. Admins can set requestedBy; it defaults to the authenticated user."
+          }
+        },
+        {
+          "name": "List Certificates (GET /api/certificates)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/certificates",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "certificates"],
+              "query": [
+                { "key": "q", "value": "", "description": "Free-text search on common name (optional)" },
+                { "key": "status", "value": "", "description": "Filter by status: ISSUED, REVOKED, SUSPENDED, PENDING (optional)" },
+                { "key": "caId", "value": "", "description": "Filter by issuing CA id (optional)" }
+              ]
+            },
+            "description": "Returns all certificates visible to the authenticated user. Admins see all; requesters see their own."
+          },
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('200 OK', () => pm.response.code === 200);", "pm.test('is array', () => Array.isArray(pm.response.json()));"] } }
+          ]
+        },
+        {
+          "name": "Get Certificate by ID (GET /api/certificates/{id})",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/certificates/1", "host": ["{{baseUrl}}"], "path": ["api", "certificates", "1"] },
+            "description": "Returns full certificate details. Replace 1 with the actual certificate id."
+          },
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('200 OK', () => pm.response.code === 200);"] } }
+          ]
+        },
+        {
+          "name": "Download Certificate PEM (GET /api/certificates/{id}/pem)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/certificates/1/pem", "host": ["{{baseUrl}}"], "path": ["api", "certificates", "1", "pem"] },
+            "description": "Downloads the certificate in PEM format."
+          },
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('200 OK', () => pm.response.code === 200);", "pm.test('PEM format', () => pm.response.text().includes('-----BEGIN CERTIFICATE-----'));"] } }
+          ]
+        },
+        {
+          "name": "Download Private Key PEM (GET /api/certificates/{id}/key)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/certificates/1/key", "host": ["{{baseUrl}}"], "path": ["api", "certificates", "1", "key"] },
+            "description": "Downloads the private key in PEM format. Only the certificate owner can download the key (403 otherwise). 400 if key is on PKCS#11 device."
+          },
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('200 or 403/400', () => [200,400,403].includes(pm.response.code));"] } }
+          ]
+        },
+        {
+          "name": "Revoke Certificate (POST /api/certificates/{id}/revoke)",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{baseUrl}}/api/certificates/1/revoke", "host": ["{{baseUrl}}"], "path": ["api", "certificates", "1", "revoke"] },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"reason\": \"KEY_COMPROMISE\"\n}" },
+            "description": "ADMIN only. Revokes a certificate. Reason must be one of: UNSPECIFIED, KEY_COMPROMISE, CA_COMPROMISE, AFFILIATION_CHANGED, SUPERSEDED, CESSATION_OF_OPERATION, CERTIFICATE_HOLD, REMOVE_FROM_CRL, PRIVILEGE_WITHDRAWN, AA_COMPROMISE."
+          },
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('200 OK', () => pm.response.code === 200);", "pm.test('revoked', () => pm.response.json().data.status === 'REVOKED');"] } }
+          ]
+        },
+        {
+          "name": "Suspend Certificate (POST /api/certificates/{id}/suspend)",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{baseUrl}}/api/certificates/1/suspend", "host": ["{{baseUrl}}"], "path": ["api", "certificates", "1", "suspend"] },
+            "description": "ADMIN only. Suspends an issued certificate."
+          },
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('200 OK', () => pm.response.code === 200);"] } }
+          ]
+        },
+        {
+          "name": "Resume Certificate (POST /api/certificates/{id}/resume)",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{baseUrl}}/api/certificates/1/resume", "host": ["{{baseUrl}}"], "path": ["api", "certificates", "1", "resume"] },
+            "description": "ADMIN only. Resumes a suspended certificate."
+          },
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('200 OK', () => pm.response.code === 200);"] } }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "CRL",
+      "description": "Generate, download (DER/PEM), and view CRL history.",
+      "item": [
+        {
+          "name": "Generate CRL (POST /api/crl/{caId}/generate)",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{baseUrl}}/api/crl/1/generate", "host": ["{{baseUrl}}"], "path": ["api", "crl", "1", "generate"] },
+            "description": "ADMIN only. Generates a new CRL for the given CA. The previous CRL is marked superseded."
+          },
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('200 OK', () => pm.response.code === 200);", "pm.test('CRL generated', () => pm.response.json().success);"] } }
+          ]
+        },
+        {
+          "name": "Download CRL DER (GET /api/crl/{caId})",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/crl/1", "host": ["{{baseUrl}}"], "path": ["api", "crl", "1"] },
+            "description": "Public (no auth required). Downloads the current CRL in DER binary format. Content-Type: application/pkix-crl."
+          },
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('200 OK', () => pm.response.code === 200);", "pm.test('binary', () => pm.response.headers.get('content-type').includes('pkix-crl'));"] } }
+          ]
+        },
+        {
+          "name": "Download CRL PEM (GET /api/crl/{caId}/pem)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/crl/1/pem", "host": ["{{baseUrl}}"], "path": ["api", "crl", "1", "pem"] },
+            "description": "Public (no auth required). Downloads the current CRL in PEM text format."
+          },
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('200 OK', () => pm.response.code === 200);", "pm.test('PEM format', () => pm.response.text().includes('-----BEGIN X509 CRL-----'));"] } }
+          ]
+        },
+        {
+          "name": "CRL History (GET /api/crl/{caId}/history)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/crl/1/history", "host": ["{{baseUrl}}"], "path": ["api", "crl", "1", "history"] },
+            "description": "Returns the list of all CRLs ever generated for this CA, most recent first."
+          },
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('200 OK', () => pm.response.code === 200);", "pm.test('is array', () => Array.isArray(pm.response.json()));"] } }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "OCSP",
+      "description": "RFC 6960 OCSP responder endpoints (binary POST, status queries).",
+      "item": [
+        {
+          "name": "OCSP Status Check by Serial (GET /api/ocsp/status/{serialHex})",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/ocsp/status/0102030405060708", "host": ["{{baseUrl}}"], "path": ["api", "ocsp", "status", "0102030405060708"] },
+            "description": "Returns human-readable OCSP status (ISSUED / REVOKED / UNKNOWN) for a certificate serial."
+          },
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('200 OK', () => pm.response.code === 200);", "pm.test('has status', () => pm.response.json().data.status);"] } }
+          ]
+        },
+        {
+          "name": "OCSP Status Check (GET /api/ocsp/status?serial=)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/ocsp/status?serial=0102030405060708",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "ocsp", "status"],
+              "query": [{ "key": "serial", "value": "0102030405060708", "description": "Hex serial number (no 0x prefix)" }]
+            },
+            "description": "Alternative query-param form of the status check."
+          },
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('200 OK', () => pm.response.code === 200);"] } }
+          ]
+        },
+        {
+          "name": "OCSP Binary Responder (POST /api/ocsp)",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{baseUrl}}/api/ocsp", "host": ["{{baseUrl}}"], "path": ["api", "ocsp"] },
+            "header": [
+              { "key": "Content-Type", "value": "application/ocsp-request" }
+            ],
+            "body": {
+              "mode": "binary",
+              "binary": ""
+            },
+            "description": "Public (no auth required). Posts a DER-encoded OCSP request. Returns a DER-encoded OCSP response. Use an OCSP tool or the test in this collection to build the request."
+          },
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('200 OK', () => pm.response.code === 200);", "pm.test('OCSP response', () => pm.response.headers.get('content-type').includes('ocsp-response'));"] } }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Certificate Profiles",
+      "description": "Manage reusable certificate profiles and discover built-in profile types.",
+      "item": [
+        {
+          "name": "List Profile Types (GET /api/profiles/types)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/profiles/types", "host": ["{{baseUrl}}"], "path": ["api", "profiles", "types"] },
+            "description": "Returns the built-in profile types (CODE_SIGNING, EMAIL, etc.) with their default parameters."
+          },
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('200 OK', () => pm.response.code === 200);", "pm.test('is array', () => Array.isArray(pm.response.json()));"] } }
+          ]
+        },
+        {
+          "name": "List Profiles (GET /api/profiles)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/profiles", "host": ["{{baseUrl}}"], "path": ["api", "profiles"] },
+            "description": "Any authenticated user can list certificate profiles."
+          },
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('200 OK', () => pm.response.code === 200);", "pm.test('is array', () => Array.isArray(pm.response.json()));"] } }
+          ]
+        },
+        {
+          "name": "Get Profile by ID (GET /api/profiles/{id})",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/profiles/1", "host": ["{{baseUrl}}"], "path": ["api", "profiles", "1"] },
+            "description": "Returns a single profile by id."
+          },
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('200 OK', () => pm.response.code === 200);"] } }
+          ]
+        },
+        {
+          "name": "Create Profile (POST /api/profiles)",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{baseUrl}}/api/profiles", "host": ["{{baseUrl}}"], "path": ["api", "profiles"] },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"TLS Server\",\n  \"description\": \"TLS server certificate\",\n  \"keyAlgorithm\": \"RSA\",\n  \"keySize\": 2048,\n  \"validityDays\": 365,\n  \"caProfile\": false,\n  \"keyUsage\": [\"digitalSignature\", \"keyEncipherment\"],\n  \"extendedKeyUsage\": [\"serverAuth\"]\n}"
+            },
+            "description": "ADMIN only. Creates a new certificate profile."
+          },
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('200 OK', () => pm.response.code === 200);"] } }
+          ]
+        },
+        {
+          "name": "Update Profile (PUT /api/profiles/{id})",
+          "request": {
+            "method": "PUT",
+            "url": { "raw": "{{baseUrl}}/api/profiles/11", "host": ["{{baseUrl}}"], "path": ["api", "profiles", "11"] },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"TLS Server (updated)\",\n  \"description\": \"TLS server certificate - updated\"\n}"
+            },
+            "description": "ADMIN only. Updates an existing profile. Adjust the profile id in the path."
+          },
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('200 OK', () => pm.response.code === 200);"] } }
+          ]
+        },
+        {
+          "name": "Delete Profile (DELETE /api/profiles/{id})",
+          "request": {
+            "method": "DELETE",
+            "url": { "raw": "{{baseUrl}}/api/profiles/11", "host": ["{{baseUrl}}"], "path": ["api", "profiles", "11"] },
+            "description": "ADMIN only. Deletes a profile. Adjust the id in the path."
+          },
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('200 OK', () => pm.response.code === 200);"] } }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Crypto",
+      "description": "Key algorithm catalog, OID catalog, and key parameter derivation.",
+      "item": [
+        {
+          "name": "List Key Algorithms (GET /api/crypto/algorithms)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/crypto/algorithms", "host": ["{{baseUrl}}"], "path": ["api", "crypto", "algorithms"] },
+            "description": "Returns supported key algorithms (RSA, EC) and their valid sizes."
+          },
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('200 OK', () => pm.response.code === 200);"] } }
+          ]
+        },
+        {
+          "name": "List OIDs (GET /api/crypto/oids)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/crypto/oids", "host": ["{{baseUrl}}"], "path": ["api", "crypto", "oids"] },
+            "description": "Returns the catalog of OIDs (key usage, extended key usage, signature algorithms)."
+          },
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('200 OK', () => pm.response.code === 200);"] } }
+          ]
+        },
+        {
+          "name": "Derive Key Parameters (POST /api/crypto/derive)",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{baseUrl}}/api/crypto/derive", "host": ["{{baseUrl}}"], "path": ["api", "crypto", "derive"] },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"keyAlgorithm\": \"RSA\",\n  \"keySize\": 2048\n}"
+            },
+            "description": "Returns derived key parameters (e.g. signature algorithm, OID) for the given algorithm and size."
+          },
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('200 OK', () => pm.response.code === 200);"] } }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "PKCS#11 / HSM",
+      "description": "Hardware token settings (SoftHSM2, smart card, HSM).",
+      "item": [
+        {
+          "name": "Get PKCS#11 Settings (GET /api/pkcs11)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/pkcs11", "host": ["{{baseUrl}}"], "path": ["api", "pkcs11"] },
+            "description": "ADMIN only. Returns the current PKCS#11 provider configuration."
+          },
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('200 OK', () => pm.response.code === 200);"] } }
+          ]
+        },
+        {
+          "name": "List PKCS#11 Presets (GET /api/pkcs11/presets)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/pkcs11/presets", "host": ["{{baseUrl}}"], "path": ["api", "pkcs11", "presets"] },
+            "description": "ADMIN only. Returns known PKCS#11 provider presets (SoftHSM2, etc.) with default paths."
+          },
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('200 OK', () => pm.response.code === 200);"] } }
+          ]
+        },
+        {
+          "name": "Update PKCS#11 Settings (POST /api/pkcs11)",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{baseUrl}}/api/pkcs11", "host": ["{{baseUrl}}"], "path": ["api", "pkcs11"] },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"providerName\": \"SunPKCS11-SoftHSM2\",\n  \"libraryPath\": \"/usr/lib/softhsm/libsofthsm2.so\",\n  \"slotIndex\": 0,\n  \"tokenPin\": \"1234\",\n  \"enabled\": false,\n  \"keyStorageDefault\": \"DATABASE\"\n}"
+            },
+            "description": "ADMIN only. Saves the PKCS#11 provider configuration. The token is not connected until you call 'Test Connection'."
+          },
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('200 OK', () => pm.response.code === 200);"] } }
+          ]
+        },
+        {
+          "name": "Test PKCS#11 Connection (POST /api/pkcs11/test)",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{baseUrl}}/api/pkcs11/test", "host": ["{{baseUrl}}"], "path": ["api", "pkcs11", "test"] },
+            "description": "ADMIN only. Connects to the PKCS#11 token and returns token info (label, manufacturer, etc.)."
+          },
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('200 OK or 400', () => pm.response.code === 200 || pm.response.code === 400);"] } }
+          ]
+        },
+        {
+          "name": "Disconnect PKCS#11 (POST /api/pkcs11/disconnect)",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{baseUrl}}/api/pkcs11/disconnect", "host": ["{{baseUrl}}"], "path": ["api", "pkcs11", "disconnect"] },
+            "description": "ADMIN only. Disconnects the PKCS#11 provider."
+          },
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('200 OK', () => pm.response.code === 200);"] } }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Users",
+      "description": "Admin-only user management (CRUD, roles, enable/disable, password reset).",
+      "item": [
+        {
+          "name": "List Users (GET /api/users)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/users", "host": ["{{baseUrl}}"], "path": ["api", "users"] },
+            "description": "ADMIN only. Returns all users with their roles."
+          },
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('200 OK', () => pm.response.code === 200);", "pm.test('is array', () => Array.isArray(pm.response.json()));"] } }
+          ]
+        },
+        {
+          "name": "Create User (POST /api/users)",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{baseUrl}}/api/users", "host": ["{{baseUrl}}"], "path": ["api", "users"] },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"testuser\",\n  \"password\": \"secret123\",\n  \"admin\": false\n}"
+            },
+            "description": "ADMIN only. Creates a new user. Username and password are required. Set admin=true for admin users."
+          },
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('200 OK', () => pm.response.code === 200);", "pm.test('user created', () => { const d = pm.response.json(); pm.expect(d.success).to.be.true; pm.expect(d.data.id).to.be.a('number'); });"] } }
+          ]
+        },
+        {
+          "name": "Update User (PUT /api/users/{id})",
+          "request": {
+            "method": "PUT",
+            "url": { "raw": "{{baseUrl}}/api/users/4", "host": ["{{baseUrl}}"], "path": ["api", "users", "4"] },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"admin\": true,\n  \"enabled\": true\n}"
+            },
+            "description": "ADMIN only. Promotes/demotes admin role and enables/disables the account. Adjust the user id in the path."
+          },
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('200 OK', () => pm.response.code === 200);"] } }
+          ]
+        },
+        {
+          "name": "Reset Password (PUT /api/users/{id}/password)",
+          "request": {
+            "method": "PUT",
+            "url": { "raw": "{{baseUrl}}/api/users/4/password", "host": ["{{baseUrl}}"], "path": ["api", "users", "4", "password"] },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"password\": \"newpassword123\"\n}" },
+            "description": "ADMIN only. Resets a user's password. You cannot reset your own password via this endpoint."
+          },
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('200 OK', () => pm.response.code === 200);"] } }
+          ]
+        },
+        {
+          "name": "Delete User (DELETE /api/users/{id})",
+          "request": {
+            "method": "DELETE",
+            "url": { "raw": "{{baseUrl}}/api/users/4", "host": ["{{baseUrl}}"], "path": ["api", "users", "4"] },
+            "description": "ADMIN only. Deletes a user. You cannot delete yourself. Adjust the id."
+          },
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('200 OK', () => pm.response.code === 200);"] } }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Audit",
+      "description": "Signed audit trail — entries are HMAC-chained. Verify checks integrity.",
+      "item": [
+        {
+          "name": "List Audit Log (GET /api/audit)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/audit", "host": ["{{baseUrl}}"], "path": ["api", "audit"] },
+            "description": "ADMIN only. Returns all audit log entries in chronological order."
+          },
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('200 OK', () => pm.response.code === 200);", "pm.test('is array', () => Array.isArray(pm.response.json()));"] } }
+          ]
+        },
+        {
+          "name": "Verify Audit Chain (GET /api/audit/verify)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/audit/verify", "host": ["{{baseUrl}}"], "path": ["api", "audit", "verify"] },
+            "description": "ADMIN only. Recomputes the HMAC chain across all audit entries and reports whether the log is intact."
+          },
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('200 OK', () => pm.response.code === 200);", "pm.test('verification result', () => { const d = pm.response.json(); pm.expect(d).to.have.property('valid'); pm.expect(d).to.have.property('total'); });"] } }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Auth - Requester",
+      "description": "Requests that run as the requester user (non-admin) to test role enforcement. Set the collection-level auth to requester credentials for these requests.",
+      "item": [
+        {
+          "name": "Requester: List Active CAs (should 200)",
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('200 OK', () => pm.response.code === 200);"] } }
+          ],
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/ca/active", "host": ["{{baseUrl}}"], "path": ["api", "ca", "active"] },
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{requesterUser}}", "type": "string" },
+                { "key": "password", "value": "{{requesterPass}}", "type": "string" }
+              ]
+            },
+            "description": "Requester can access the active CA list (needed for CSR form)."
+          }
+        },
+        {
+          "name": "Requester: List All CAs (should 403)",
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('403 Forbidden', () => pm.response.code === 403);"] } }
+          ],
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/ca", "host": ["{{baseUrl}}"], "path": ["api", "ca"] },
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{requesterUser}}", "type": "string" },
+                { "key": "password", "value": "{{requesterPass}}", "type": "string" }
+              ]
+            },
+            "description": "Requester should be forbidden from listing all CAs."
+          }
+        },
+        {
+          "name": "Requester: List Users (should 403)",
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('403 Forbidden', () => pm.response.code === 403);"] } }
+          ],
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/users", "host": ["{{baseUrl}}"], "path": ["api", "users"] },
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{requesterUser}}", "type": "string" },
+                { "key": "password", "value": "{{requesterPass}}", "type": "string" }
+              ]
+            },
+            "description": "Requester should be forbidden from listing users."
+          }
+        },
+        {
+          "name": "Requester: List Audit Log (should 403)",
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('403 Forbidden', () => pm.response.code === 403);"] } }
+          ],
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/audit", "host": ["{{baseUrl}}"], "path": ["api", "audit"] },
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{requesterUser}}", "type": "string" },
+                { "key": "password", "value": "{{requesterPass}}", "type": "string" }
+              ]
+            },
+            "description": "Requester should be forbidden from viewing the audit log."
+          }
+        },
+        {
+          "name": "Requester: Generate CRL (should 403)",
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('403 Forbidden', () => pm.response.code === 403);"] } }
+          ],
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{baseUrl}}/api/crl/1/generate", "host": ["{{baseUrl}}"], "path": ["api", "crl", "1", "generate"] },
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{requesterUser}}", "type": "string" },
+                { "key": "password", "value": "{{requesterPass}}", "type": "string" }
+              ]
+            },
+            "description": "Requester should be forbidden from generating CRLs."
+          }
+        },
+        {
+          "name": "Requester: Issue Certificate via CSR (should 200)",
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('200 OK', () => pm.response.code === 200);"] } }
+          ],
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{baseUrl}}/api/certificates/csr", "host": ["{{baseUrl}}"], "path": ["api", "certificates", "csr"] },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"csrPem\": \"-----BEGIN CERTIFICATE REQUEST-----\\nMIICvDCCAaQCAQAwdDELMAkGA1UEBhMCVVMxFjAUBgNVBAgMDUNhbGlmb3JuaWExFjAUBgNVBAcMDVNhbiBGcmFuY2lzY28xGTAXBgNVBAoMEEV4YW1wbGUgQ29ycC4xEzARBgNVBAsMClRlc3QgVW5pdDEWMBQGA1UEAwwNdGVzdC5leGFtcGxlLmNvbCCAASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAO3fYHkLs2hKlK0YF+aDSEJHVvKqKjJoIqFqMYC3GxKI3E0W+j9pRxO1qD/sFmE5RV7eCMRaZCRFh0y7Vt9Bn0E7oC+UMJCa4oOv+LqR8kS4JkHm5bPOk5vS5dJDcvkEYpOdTNClpzN2B7h/5w+3FgRgFM9Z0gq7lVqS2d7w2r3Q+T8O8A6G9dJkU5S4Y7b6B8C3D1E4F5G6H7I8J9K0L1M2N3O4P5Q6R7S8T9U0V1W2X3Y4Z5A6B7C8D9E0F1G2H3I4J5K6L7M8N9O0P1Q2R3S4T5U6V7W8X9Y0Z1A2B3C4D5E6F7G8H9I0J1K2L3M4N5O6P7Q8R9S0T1U2V3W4X5Y6Z7A8B9C0D1E2F3G4H5I6J7K8L9M0N1O2P3Q4R5S6T7U8V9W0X1Y2Z3A4B5C6D7E8F9G0H1I2J3K4L5M6N7O8P9Q0R1S2T3U4V5W6X7Y8Z9A0B1C2D3E4F5G6H7I8J9K0L1M2N3O4P5Q6R7S8T9U0V1W2X3Y4Z5A6B7C8D9E0F1G2H3I4J5K6L7M8N9O0P1Q2R3S4T5U6V7W8X9Y0Z1A2B3C4D5E6F7G8H9I0J1K2L3M4N5O6P7Q8R9S0T1U2V3W4X5Y6Z7A8B9C0D1E2F3G4H5I6J7K8L9M0N1O2P3Q4R5S6T7U8V9W0X1Y2Z3A4B5C6D7E8F9G0H1I2J3K4L5M6N7O8P9Q0R1S2T3U4V5W6X7Y8Z9A==\\n-----END CERTIFICATE REQUEST-----\"\n}"
+            },
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{requesterUser}}", "type": "string" },
+                { "key": "password", "value": "{{requesterPass}}", "type": "string" }
+              ]
+            },
+            "description": "Requester can issue certificates via CSR."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Auth - Unauthenticated",
+      "description": "Verify that unauthenticated requests to protected endpoints fail, and public endpoints work without auth.",
+      "item": [
+        {
+          "name": "No Auth: GET /api/ca (should 401)",
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('401 Unauthorized', () => pm.response.code === 401);"] } }
+          ],
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/ca", "host": ["{{baseUrl}}"], "path": ["api", "ca"] },
+            "auth": { "type": "noauth" },
+            "description": "Unauthenticated request to an admin endpoint should return 401."
+          }
+        },
+        {
+          "name": "No Auth: GET /api/crl/1 (should 200 - public)",
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('200 OK', () => pm.response.code === 200);"] } }
+          ],
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/crl/1", "host": ["{{baseUrl}}"], "path": ["api", "crl", "1"] },
+            "auth": { "type": "noauth" },
+            "description": "CRL endpoints are public — no auth required."
+          }
+        },
+        {
+          "name": "No Auth: POST /api/ocsp (should 200 - public)",
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('200 or 400', () => [200,400].includes(pm.response.code));"] } }
+          ],
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{baseUrl}}/api/ocsp", "host": ["{{baseUrl}}"], "path": ["api", "ocsp"] },
+            "header": [{ "key": "Content-Type", "value": "application/ocsp-request" }],
+            "body": { "mode": "binary", "binary": "" },
+            "auth": { "type": "noauth" },
+            "description": "OCSP POST is public. Empty body returns 400; a valid request returns 200."
+          }
+        }
+      ]
+    },
+    {
+      "name": "DMZ Responder",
+      "description": "Endpoints served by the DMZ responder module. Requires the DMZ app to be running.",
+      "item": [
+        {
+          "name": "Health (GET /health)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{dmzUrl}}/health", "host": ["{{dmzUrl}}"], "path": ["health"] },
+            "description": "No auth required. Returns UP status and cache entry counts (crl, ocsp, caList)."
+          },
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('200 OK', () => pm.response.code === 200);", "pm.test('UP', () => pm.response.json().status === 'UP');", "pm.test('has caches', () => { const c = pm.response.json().cache; pm.expect(c).to.have.property('crlEntries'); pm.expect(c).to.have.property('ocspEntries'); pm.expect(c).to.have.property('caListEntries'); });"] } }
+          ]
+        },
+        {
+          "name": "CRL by CA Serial Hex (GET /api/crl/{caSerialHex})",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{dmzUrl}}/api/crl/F0FE6EEA6EBEA43F1D63CC167765CE68", "host": ["{{dmzUrl}}"], "path": ["api", "crl", "F0FE6EEA6EBEA43F1D63CC167765CE68"] },
+            "description": "Public. Fetches the CRL by CA serial hex (the form embedded in issued certificates' CDP). The DMZ resolves this to the backend CA id."
+          },
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('200 OK', () => pm.response.code === 200);", "pm.test('DER CRL', () => pm.response.headers.get('content-type').includes('pkix-crl'));"] } }
+          ]
+        },
+        {
+          "name": "CRL by CA Name (GET /api/crl/{caName})",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{dmzUrl}}/api/crl/Demo Root CA", "host": ["{{dmzUrl}}"], "path": ["api", "crl", "Demo Root CA"] },
+            "description": "Public. Resolves the CA by its human-readable name."
+          },
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('200 OK', () => pm.response.code === 200);"] } }
+          ]
+        },
+        {
+          "name": "CRL by CA Numeric ID (GET /api/crl/{id})",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{dmzUrl}}/api/crl/1", "host": ["{{dmzUrl}}"], "path": ["api", "crl", "1"] },
+            "description": "Public. Resolves the CA by its numeric id."
+          },
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('200 OK', () => pm.response.code === 200);"] } }
+          ]
+        },
+        {
+          "name": "OCSP POST (POST /api/ocsp)",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{dmzUrl}}/api/ocsp", "host": ["{{dmzUrl}}"], "path": ["api", "ocsp"] },
+            "header": [{ "key": "Content-Type", "value": "application/ocsp-request" }],
+            "body": { "mode": "binary", "binary": "" },
+            "description": "Public. Posts a DER-encoded OCSP request. The DMZ forwards it to the CM backend and caches the signed response."
+          },
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('200 OK', () => pm.response.code === 200);", "pm.test('OCSP response', () => pm.response.headers.get('content-type').includes('ocsp-response'));"] } }
+          ]
+        },
+        {
+          "name": "OCSP GET base64url (GET /api/ocsp?request=)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{dmzUrl}}/api/ocsp?request=MEowRQIhALp3GRXQFjLGOVqPY3yhpsB0aKEZywQ9nPkH9y8GdvVfAiEAzRuvJ8CZGEPCGZ3sBnP8F+0DQb0D5m8T0N0aGUqqE4Y%3D",
+              "host": ["{{dmzUrl}}"],
+              "path": ["api", "ocsp"],
+              "query": [{ "key": "request", "value": "MEowRQIhALp3GRXQFjLGOVqPY3yhpsB0aKEZywQ9nPkH9y8GdvVfAiEAzRuvJ8CZGEPCGZ3sBnP8F+0DQb0D5m8T0N0aGUqqE4Y%3D", "description": "Base64url-encoded OCSP request (RFC 5019)" }]
+            },
+            "description": "Public. RFC 5019 OCSP GET. Accepts base64url-encoded request in the 'request' param (also 'base64' as alias)."
+          },
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('200 OK', () => pm.response.code === 200);"] } }
+          ]
+        },
+        {
+          "name": "Unknown CA (GET /api/crl/does-not-exist → 404)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{dmzUrl}}/api/crl/does-not-exist", "host": ["{{dmzUrl}}"], "path": ["api", "crl", "does-not-exist"] },
+            "description": "An unknown CA reference should return 404, not a gateway error."
+          },
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('404 Not Found', () => pm.response.code === 404);"] } }
+          ]
+        }
+      ]
+    }
+  ]
+}

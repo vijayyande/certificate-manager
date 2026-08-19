@@ -1,0 +1,31 @@
+spring:
+  application:
+    name: cm-dmz-responder
+
+server:
+  # Port external clients are allowed to reach. Terminate TLS on the DMZ edge
+  # (reverse proxy / load balancer) and forward plain HTTP to this port.
+  port: 8080
+
+cm:
+  # Internal certificate-manager backend. Only this host is reachable from the
+  # DMZ (egress whitelist). All values are overridable via environment variables.
+  base-url: ${CM_BASE_URL:http://localhost:8443}
+  username: ${CM_RESPONDER_USER:responder}
+  password: ${CM_RESPONDER_PASSWORD:}
+  # How long signed bytes are cached. CRLs are refreshed on a long interval;
+  # OCSP responses on a short one so revocations propagate quickly.
+  crl-cache-seconds: ${CM_CRL_CACHE_SECONDS:300}
+  ocsp-cache-seconds: ${CM_OCSP_CACHE_SECONDS:60}
+  ca-list-cache-seconds: ${CM_CA_LIST_CACHE_SECONDS:300}
+  # Reject OCSP requests larger than this many bytes.
+  max-ocsp-request-bytes: ${CM_MAX_OCSP_BYTES:16384}
+  connect-timeout-ms: ${CM_CONNECT_TIMEOUT_MS:5000}
+  read-timeout-ms: ${CM_READ_TIMEOUT_MS:10000}
+  # If the backend is unreachable, serve the last cached (expired) entry
+  # instead of failing. Keeps CRL/OCSP clients working during outages.
+  serve-stale-on-error: ${CM_SERVE_STALE:true}
+
+logging:
+  level:
+    com.example.dmz: INFO
